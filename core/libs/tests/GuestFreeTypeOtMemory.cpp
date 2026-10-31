@@ -244,6 +244,62 @@ void BoundedCopy() {
     Require(ft_mem_strcpyn_nid_postfix(buffer, "", 5) == 0 && buffer[0] == 0 && buffer[1] == 'x', "strcpyn of an empty string returns 0");
 }
 
+void LegacyWrappers() {
+    Recorder recorder;
+    Reset(recorder);
+    void* block = reinterpret_cast<void*>(0x1);
+    Require(FT_QAlloc_nid_postfix(&recorder.memory, 24, &block) == 0 && block, "FT_QAlloc of a positive size returns 0 and stores the block");
+    Require(recorder.allocs == 1 && recorder.lastSize == 24 && recorder.lastMemory == &recorder.memory, "FT_QAlloc passes the memory record and size to alloc");
+    Require(Filled(block, 24, 0xAA), "FT_QAlloc leaves the block uncleared");
+    ft_mem_free_nid_postfix(&recorder.memory, block);
+
+    block = reinterpret_cast<void*>(0x1);
+    Require(FT_QAlloc_nid_postfix(&recorder.memory, 0, &block) == 0 && !block && recorder.allocs == 1, "FT_QAlloc of size 0 stores null without calling alloc");
+    block = reinterpret_cast<void*>(0x1);
+    Require(FT_QAlloc_nid_postfix(&recorder.memory, -1, &block) == 0x06 && !block && recorder.allocs == 1, "FT_QAlloc of a negative size returns Invalid_Argument and stores null");
+    recorder.fail = true;
+    block = reinterpret_cast<void*>(0x1);
+    Require(FT_QAlloc_nid_postfix(&recorder.memory, 8, &block) == 0x40 && !block && recorder.allocs == 2, "FT_QAlloc reports Out_Of_Memory and stores null when alloc fails");
+
+    Reset(recorder);
+    block = nullptr;
+    Require(FT_Realloc_nid_postfix(&recorder.memory, 0, 12, &block) == 0 && block, "FT_Realloc from 0 bytes allocates");
+    Require(recorder.allocs == 1 && recorder.lastSize == 12 && Filled(block, 12, 0), "FT_Realloc from 0 bytes clears the block");
+    auto* bytes = static_cast<unsigned char*>(block);
+    for (int i = 0; i < 12; ++i) bytes[i] = static_cast<unsigned char>(i + 1);
+
+    Require(FT_Realloc_nid_postfix(&recorder.memory, 12, 20, &block) == 0 && block, "FT_Realloc grows a live block");
+    Require(recorder.reallocs == 1 && recorder.lastCurrent == 12 && recorder.lastNew == 20, "FT_Realloc resizes with item_size 1");
+    bytes = static_cast<unsigned char*>(block);
+    bool kept = true;
+    for (int i = 0; i < 12; ++i) kept = kept && bytes[i] == i + 1;
+    Require(kept && Filled(bytes + 12, 8, 0), "FT_Realloc preserves existing bytes and clears grown bytes");
+
+    void* saved = block;
+    Require(FT_Realloc_nid_postfix(&recorder.memory, 20, -4, &block) == 0x06 && block == saved, "FT_Realloc on Invalid_Argument keeps the old pointer");
+    recorder.fail = true;
+    Require(FT_Realloc_nid_postfix(&recorder.memory, 20, 32, &block) == 0x40 && block == saved, "FT_Realloc on Out_Of_Memory keeps the old pointer");
+    recorder.fail = false;
+    Require(FT_Realloc_nid_postfix(&recorder.memory, 20, 0, &block) == 0 && !block && recorder.frees == 1 && recorder.lastBlock == saved, "FT_Realloc to 0 bytes frees the block and stores null");
+
+    Reset(recorder);
+    block = nullptr;
+    Require(FT_QRealloc_nid_postfix(&recorder.memory, 0, 10, &block) == 0 && block, "FT_QRealloc from 0 bytes allocates");
+    Require(recorder.allocs == 1 && recorder.lastSize == 10 && Filled(block, 10, 0), "FT_QRealloc from 0 bytes clears the block as FreeType 2.4.12 does");
+    std::memset(block, 0x33, 10);
+
+    Require(FT_QRealloc_nid_postfix(&recorder.memory, 10, 18, &block) == 0 && block, "FT_QRealloc grows a live block");
+    Require(recorder.reallocs == 1 && recorder.lastCurrent == 10 && recorder.lastNew == 18, "FT_QRealloc resizes with item_size 1");
+    Require(Filled(block, 10, 0x33) && Filled(static_cast<char*>(block) + 10, 8, 0xAA), "FT_QRealloc leaves grown tail uncleared");
+
+    saved = block;
+    Require(FT_QRealloc_nid_postfix(&recorder.memory, 18, 0x80000000LL, &block) == 0x0A && block == saved, "FT_QRealloc above FT_INT_MAX returns Array_Too_Large and keeps the old pointer");
+    recorder.fail = true;
+    Require(FT_QRealloc_nid_postfix(&recorder.memory, 18, 24, &block) == 0x40 && block == saved, "FT_QRealloc on Out_Of_Memory keeps the old pointer");
+    recorder.fail = false;
+    Require(FT_QRealloc_nid_postfix(&recorder.memory, 18, 0, &block) == 0 && !block && recorder.frees == 1 && recorder.lastBlock == saved, "FT_QRealloc to 0 bytes frees the block and stores null");
+}
+
 }
 
 int main() {
@@ -253,6 +309,7 @@ int main() {
     ClearedReallocation();
     Duplication();
     BoundedCopy();
+    LegacyWrappers();
     std::puts("Guest FreeType Ot memory tests passed");
     return 0;
 }

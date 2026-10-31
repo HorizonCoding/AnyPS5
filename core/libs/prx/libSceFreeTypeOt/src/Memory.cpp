@@ -101,4 +101,22 @@ std::int32_t APS5_VABI ft_mem_strcpyn_nid_postfix(char* destination, const char*
     return *source != 0;
 }
 
+std::int32_t APS5_VABI FT_QAlloc_nid_postfix(FreeType::GuestMemoryRec* memory, std::int64_t size, void** p) {
+    std::int32_t error = 0;
+    *p = ft_mem_qalloc_nid_postfix(memory, size, &error);
+    return error;
+}
+
+std::int32_t APS5_VABI FT_Realloc_nid_postfix(FreeType::GuestMemoryRec* memory, std::int64_t current, std::int64_t size, void** p) {
+    std::int32_t error = 0;
+    *p = ft_mem_realloc_nid_postfix(memory, 1, current, size, *p, &error);
+    return error;
+}
+
+std::int32_t APS5_VABI FT_QRealloc_nid_postfix(FreeType::GuestMemoryRec* memory, std::int64_t current, std::int64_t size, void** p) {
+    std::int32_t error = 0;
+    *p = ft_mem_qrealloc_nid_postfix(memory, 1, current, size, *p, &error);
+    return error;
+}
+
 }
